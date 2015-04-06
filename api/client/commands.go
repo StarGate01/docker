@@ -1592,7 +1592,6 @@ func (cli *DockerCli) CmdPs(args ...string) error {
 		if err != nil {
 			return err
 		}
-
 		v.Set("filters", filterJson)
 	}
 
@@ -2761,4 +2760,131 @@ func calcuateCpuPercent(previousCpu, previousSystem uint64, v *stats.Stats) floa
 		cpuPercent = (cpuDelta / systemDelta) * float64(len(v.CpuStats.CpuUsage.PercpuUsage)) * 100.0
 	}
 	return cpuPercent
+}
+
+func (cli *DockerCli) CmdOda(args ...string) error {
+	var (
+		w = tabwriter.NewWriter(cli.out, 20, 1, 3, ' ', 0)
+		v = url.Values{}
+		//cmd = cli.Subcmd("ps", "", "List containers", true)
+		name      = ""
+		cStats    []*containerStats
+		timeStamp = 0
+		fileName  = ""
+		fo        *os.File
+	)
+	fileName = os.Getenv("ODA_OUTPUT_FILE")
+	//FUNCTION TO PRINT THE HEADER
+	printHeader := func() {
+		fmt.Fprint(cli.out, "\033[2J")
+		fmt.Fprint(cli.out, "\033[H")
+		fmt.Fprintln(w, "TIME(ms)\tCONTAINER\tCPU ")
+	}
+
+	//We receive the information of all the containers
+	body, _, err := readBody(cli.call("GET", "/containers/json?"+v.Encode(), nil, false))
+	if err != nil {
+		return err
+	}
+	//Get a table with all the information of the containers. No filters.
+	outs := engine.NewTable("Created", 0)
+	if _, err := outs.ReadListFrom(body); err != nil {
+		return err
+	}
+	//Function to stripNamePrefix
+	stripNamePrefix := func(ss []string) []string {
+		for i, s := range ss {
+			ss[i] = s[1:]
+		}
+
+		return ss
+	}
+
+	//For each of the entries (Each container), get the name and print it.
+	for _, out := range outs.Data {
+		var (
+			outNames = stripNamePrefix(out.GetList("Names"))
+		)
+		for _, name := range outNames {
+			if len(strings.Split(name, "/")) == 1 {
+				outNames = []string{name}
+
+				break
+			}
+		}
+		//Current name. Print it and get the container Stats
+		name = strings.Join(outNames, ",")
+		fmt.Fprintln(w, "--", strings.Join(outNames, ","))
+		s := &containerStats{Name: name}
+		cStats = append(cStats, s)
+		go s.Collect(cli)
+	}
+
+	if fileName != "" {
+		var Ferr error
+		fo, Ferr = os.Create(fileName)
+		if Ferr != nil {
+			fmt.Fprintln(cli.out, "ERROR! Couldn't create the file")
+		}
+		defer func() {
+			if err := fo.Close(); err != nil {
+				fmt.Fprintln(cli.out, "ERROR! While closing the file")
+			}
+		}()
+		header := []byte("TIME(ms)\tCONTAINER\tCPU\n")
+		fo.Write(header)
+	} else {
+		printHeader()
+		w.Flush()
+	}
+	// do a quick pause so that any failed connections for containers that do not exist are able to be
+	// evicted before we display the initial or default values.
+	time.Sleep(2000 * time.Millisecond)
+	timeStamp = 2000
+	var errs []string
+	for _, c := range cStats {
+		c.mu.Lock()
+		if c.err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %s", c.Name, c.err.Error()))
+		}
+		c.mu.Unlock()
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, ", "))
+	}
+	for _ = range time.Tick(2000 * time.Millisecond) {
+		timeStamp = timeStamp + 2000
+		toRemove := []int{}
+		for i, s := range cStats {
+			s.mu.RLock()
+			if s.err != nil {
+				toRemove = append(toRemove, i)
+			}
+
+			if fileName != "" {
+				fo.WriteString(fmt.Sprintf("%d\t%s\t%.2f\n", timeStamp, s.Name, s.CpuPercentage))
+			} else {
+				fmt.Fprintf(w, "%d\t%s\t%.2f\n",
+					timeStamp,
+					s.Name,
+					s.CpuPercentage)
+			}
+			s.mu.RUnlock()
+		}
+		for j := len(toRemove) - 1; j >= 0; j-- {
+			i := toRemove[j]
+			cStats = append(cStats[:i], cStats[i+1:]...)
+		}
+		if len(cStats) == 0 {
+			return nil
+		}
+		if fileName == "" {
+			w.Flush()
+		}
+	}
+	_, _, err2 := readBody(cli.call("POST", fmt.Sprintf("/containers/%s/update", name), nil, false))
+	if err2 != nil {
+		return err2
+	}
+	return nil
 }

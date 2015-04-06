@@ -380,3 +380,10 @@ func (t *TtyConsole) AttachPipes(command *exec.Cmd, pipes *execdriver.Pipes) err
 func (t *TtyConsole) Close() error {
 	return t.MasterPty.Close()
 }
+
+func (d *driver) Update(cpushare int) error {
+
+	//print stuff
+	log.Warnf("UPDATE: DRIVER IS WORKING")
+	return nil
+}

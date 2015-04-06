@@ -529,3 +529,8 @@ func (d *driver) Stats(id string) (*execdriver.ResourceStats, error) {
 	return nil, fmt.Errorf("container stats are not supported with LXC")
 
 }
+
+func (d *driver) Update(cpushare int) error {
+	log.Warnf("UPDATE: DRIVER LXC IS WORKING")
+	return nil
+}
