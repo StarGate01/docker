@@ -799,8 +799,7 @@ func (d *driver) Stats(id string) (*execdriver.ResourceStats, error) {
 	return execdriver.Stats(d.containerDir(id), d.activeContainers[id].container.Cgroups.Memory, d.machineMemory)
 }
 
-
-func (d *driver) Update(c *execdriver.Command, cpushare int) error {
+func (d *driver) Update(c *execdriver.Command, cpushare int64) error {
 	log.Warnf("UPDATE: DRIVER LXC IS WORKING")
 	return nil
 }

@@ -2903,23 +2903,69 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 		//Required variables for different operations
 		timeStamp = 0
 		//File for output the values.
-		fileName    = ""
-		fo          *os.File
-		controlStep = 2000
+		fileName         = ""
+		fo               *os.File
+		controlStep      = 2000
+		timeSlotsControl = false
+		StaticAssignment = false
+
+		//FOR CONFLICTING OPTIONS
+		ErrConflictControlPolicies = fmt.Errorf("Conflicting options: -ts, -tsv, --observe and -st")
 	)
 	//SETTING UP THE POSSIBLE FLAGS
 	//DEFINITION OF THE DIFFERENT FLAG POLICIES.
 	var (
-		flObserveOnly = cmd.Bool([]string{"observe", "-observe"}, false, "Do not adapt, only observe (incompatible with -d)")
-		flTimeSlots   = cmd.Bool([]string{"ts", "-time_slots"}, false, "Create timeslots, use -slot_size=val_ms to define time slot. Default 1000ms (incompatible with -d)")
-		//	flTileSlotsValue= cmd.Int([]string{"tsv","-time_slots_value"},1000,"Timeslots value in ms. -tsv=time_in_ms (incompatible with -d)")
-		//	flStaticAssignment = cmd.String([]string{"st","-static"},"","Static Assignment of cpu shares. container_name1=share, container_name2=share . (incompatible with -d)")
-		flFileName = cmd.String([]string{"fd", "-file_dump"}, "", "--file_dump fileName. If defined, the output would ve in a CVS file. Else it would be std output.")
+		flObserveOnly      = cmd.Bool([]string{"ob", "-observe"}, false, "Do not adapt, only observe dumping the info every -obv ms. Default 2000ms (incompatible with -d)")
+		flObserveOnlyValue = cmd.Int([]string{"obv", "-observe_value"}, 2000, "Setting the observe only value. implies --observe (incompatible with -d)")
+		flTimeSlots        = cmd.Bool([]string{"ts", "-time_slots"}, false, "Create timeslots, use -slot_size=val_ms to define time slot. Default 2000ms (incompatible with -d)")
+		flTimeSlotsValue   = cmd.Int([]string{"tsv", "-time_slots_value"}, 2000, "Timeslots value in ms. -tsv=time_in_ms. Implies --time_slots (incompatible with -d)")
+		flStaticAssignment = cmd.String([]string{"st", "-static"}, "", "Static Assignment of cpu shares. container_name1=share, container_name2=share . (incompatible with -d)")
+		flFileName         = cmd.String([]string{"fd", "-file_dump"}, "", "--file_dump fileName. If defined, the output would ve in a CVS file. Else it would be std output.")
 	)
 	//Parsing the flags.
 	utils.ParseFlags(cmd, args, true)
 	if *flObserveOnly || *flTimeSlots {
 		fmt.Fprintln(cli.out, "I got the flag")
+	}
+
+	//FLAG FOR OBSERVE ONLY
+	if *flObserveOnly || cmd.IsSet("obv") || cmd.IsSet("-observe_value") {
+		//check if other control policy is active
+		if *flTimeSlots || cmd.IsSet("-static") || cmd.IsSet("st") || cmd.IsSet("tsv") || cmd.IsSet("-time_slots_value") {
+			return ErrConflictControlPolicies
+		}
+		//Get the user defined value of clock for the observe
+		if cmd.IsSet("obv") || cmd.IsSet("-observe_value") {
+			controlStep = *flObserveOnlyValue * 50
+		} else {
+			controlStep = 100000 //by default, observe every 2000 ms
+		}
+	}
+
+	//FLAG FOR TIME SLOTS
+	if *flTimeSlots || cmd.IsSet("tsv") || cmd.IsSet("-time_slots_value") {
+		//check if other control policy is active
+		if *flObserveOnly || cmd.IsSet("-static") || cmd.IsSet("st") || cmd.IsSet("obv") || cmd.IsSet("-observe_value") {
+			return ErrConflictControlPolicies
+		}
+		//Get the user defined value of the clock for time Slots
+		if cmd.IsSet("tsv") || cmd.IsSet("-time_slots_value") {
+			controlStep = *flTimeSlotsValue
+		} else {
+			controlStep = 20000 //by default, time slots of 2000 ms
+		}
+		timeSlotsControl = true
+
+	}
+
+	//FLAG FOR STATIC ASSIGNMENT PER CONTAINER
+	if cmd.IsSet("-static") || cmd.IsSet("st") {
+		//check if other control policy is active
+		if *flTimeSlots || cmd.IsSet("tsv") || cmd.IsSet("-time_slots_value") || cmd.IsSet("obv") || cmd.IsSet("-observe_value") {
+			return ErrConflictControlPolicies
+		}
+		StaticAssignment = true
+		return fmt.Errorf("Under Construction")
 	}
 
 	//Check if the flag for file dump was declared in the command line. If so assign the name
@@ -3011,9 +3057,12 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 
 	//ODA LOOP SECTION
 	timeStamp = controlStep
+	clock_mult := 0
 	shares := 0
-	for _ = range time.Tick(time.Duration(controlStep) * time.Millisecond) {
-		//OBSERVE
+	for _ = range time.Tick(time.Duration(controlStep) / 50 * time.Millisecond) {
+		//For decide and act 50 times slower
+		clock_mult = clock_mult + 1
+		//OBSERVE should be 50 times faster than decide to have a good resolution
 		timeStamp = timeStamp + controlStep
 		toRemove := []int{}
 		for i, s := range cStats {
@@ -3045,14 +3094,22 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 			w.Flush()
 		}
 		//DECIDE AND ACT
-		if shares == len(cStats) {
-			shares = 0
+		if clock_mult == 50 {
+			if timeSlotsControl {
+				clock_mult = 0
+				if shares == len(cStats) {
+					shares = 0
+				}
+				tsError := cli.TimeSlots(cStats, shares)
+				if tsError != nil {
+					return tsError
+				}
+				shares = shares + 1
+			} else if StaticAssignment {
+				fmt.Fprintln(cli.out, "UnderConstruction"+*flStaticAssignment)
+			}
 		}
-		tsError := cli.TimeSlots(cStats, shares)
-		if tsError != nil {
-			return tsError
-		}
-		shares = shares + 1
+
 	}
 	return nil
 }
