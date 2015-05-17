@@ -2888,17 +2888,46 @@ func calculateCpuPercent(previousCpu, previousSystem uint64, v *types.Stats) flo
 }
 
 func (cli *DockerCli) CmdOda(args ...string) error {
+	//We obtain the FlagSet.
+	cmd := cli.Subcmd("ODA", "[OPTION]", "ODA Loop, no policy will only observe.", true)
+	//REQUIRED VARIABLES
 	var (
+		//The output formater to the cli.out
 		w = tabwriter.NewWriter(cli.out, 20, 1, 3, ' ', 0)
+		//Variable for sending elements through JSON to the server
 		v = url.Values{}
-		//cmd = cli.Subcmd("ps", "", "List containers", true)
-		name      = ""
-		cStats    []*containerStats
+		//Variable for storing the container name
+		name = ""
+		//Will contain the stats of the containers
+		cStats []*containerStats
+		//Required variables for different operations
 		timeStamp = 0
-		fileName  = ""
-		fo        *os.File
+		//File for output the values.
+		fileName    = ""
+		fo          *os.File
+		controlStep = 2000
 	)
-	fileName = os.Getenv("ODA_OUTPUT_FILE")
+	//SETTING UP THE POSSIBLE FLAGS
+	//DEFINITION OF THE DIFFERENT FLAG POLICIES.
+	var (
+		flObserveOnly = cmd.Bool([]string{"observe", "-observe"}, false, "Do not adapt, only observe (incompatible with -d)")
+		flTimeSlots   = cmd.Bool([]string{"ts", "-time_slots"}, false, "Create timeslots, use -slot_size=val_ms to define time slot. Default 1000ms (incompatible with -d)")
+		//	flTileSlotsValue= cmd.Int([]string{"tsv","-time_slots_value"},1000,"Timeslots value in ms. -tsv=time_in_ms (incompatible with -d)")
+		//	flStaticAssignment = cmd.String([]string{"st","-static"},"","Static Assignment of cpu shares. container_name1=share, container_name2=share . (incompatible with -d)")
+		flFileName = cmd.String([]string{"fd", "-file_dump"}, "", "--file_dump fileName. If defined, the output would ve in a CVS file. Else it would be std output.")
+	)
+	//Parsing the flags.
+	utils.ParseFlags(cmd, args, true)
+	if *flObserveOnly || *flTimeSlots {
+		fmt.Fprintln(cli.out, "I got the flag")
+	}
+
+	//Check if the flag for file dump was declared in the command line. If so assign the name
+	if cmd.IsSet("fd") || cmd.IsSet("-file_dump") {
+		fmt.Fprintln(cli.out, "File "+*flFileName+" created. Filling the information")
+		fileName = *flFileName
+	}
+
 	//FUNCTION TO PRINT THE HEADER
 	printHeader := func() {
 		fmt.Fprint(cli.out, "\033[2J")
@@ -2906,6 +2935,7 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 		fmt.Fprintln(w, "TIME(ms)\tCONTAINER\tCPU ")
 	}
 
+	//GETTING ALL CONTAINERS NAMES TODO: We need to do this process every other time for getting when new containers are created
 	//We receive the information of all the containers
 	body, _, err := readBody(cli.call("GET", "/containers/json?"+v.Encode(), nil, nil))
 	if err != nil {
@@ -2924,7 +2954,6 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 
 		return ss
 	}
-
 	//For each of the entries (Each container), get the name and print it.
 	for _, out := range outs.Data {
 		var (
@@ -2945,6 +2974,7 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 		go s.Collect(cli)
 	}
 
+	//CHECKING IF WE HAVE A FILE NAME. IF SO WE NEED TO CREATE IT. ALSO WE ONLY NEED TO SHOW THE HEADERS ONCE
 	if fileName != "" {
 		var Ferr error
 		fo, Ferr = os.Create(fileName)
@@ -2962,10 +2992,11 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 		printHeader()
 		w.Flush()
 	}
+
+	// CONNECTION CHECK FOR STATS
 	// do a quick pause so that any failed connections for containers that do not exist are able to be
 	// evicted before we display the initial or default values.
 	time.Sleep(2000 * time.Millisecond)
-	timeStamp = 2000
 	var errs []string
 	for _, c := range cStats {
 		c.mu.Lock()
@@ -2977,8 +3008,13 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 	if len(errs) > 0 {
 		return fmt.Errorf("%s", strings.Join(errs, ", "))
 	}
-	for _ = range time.Tick(2000 * time.Millisecond) {
-		timeStamp = timeStamp + 2000
+
+	//ODA LOOP SECTION
+	timeStamp = controlStep
+	shares := 0
+	for _ = range time.Tick(time.Duration(controlStep) * time.Millisecond) {
+		//OBSERVE
+		timeStamp = timeStamp + controlStep
 		toRemove := []int{}
 		for i, s := range cStats {
 			s.mu.RLock()
@@ -3001,15 +3037,44 @@ func (cli *DockerCli) CmdOda(args ...string) error {
 			cStats = append(cStats[:i], cStats[i+1:]...)
 		}
 		if len(cStats) == 0 {
+			//TODO Should close to connection ??
 			return nil
 		}
+		//if there is no file name, print the information on stdio
 		if fileName == "" {
 			w.Flush()
 		}
+		//DECIDE AND ACT
+		if shares == len(cStats) {
+			shares = 0
+		}
+		tsError := cli.TimeSlots(cStats, shares)
+		if tsError != nil {
+			return tsError
+		}
+		shares = shares + 1
 	}
-	_, _, err2 := readBody(cli.call("POST", fmt.Sprintf("/containers/%s/update", name), nil, nil))
-	if err2 != nil {
-		return err2
+	return nil
+}
+
+func (cli *DockerCli) TimeSlots(cStats []*containerStats, defShares int) error {
+	var (
+		name = ""
+		v    = url.Values{}
+	)
+	sharesToSend := 0
+	for i, s := range cStats {
+		name = s.Name
+		if defShares != i {
+			sharesToSend = 1
+		} else {
+			sharesToSend = 1024
+		}
+		v.Set("Shares", strconv.Itoa(sharesToSend))
+		_, _, err2 := readBody(cli.call("POST", "/containers/"+name+"/update?"+v.Encode(), nil, nil))
+		if err2 != nil {
+			return err2
+		}
 	}
 	return nil
 }

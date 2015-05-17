@@ -1622,6 +1622,7 @@ func postContainersUpdate(eng *engine.Engine, version version.Version, w http.Re
 		return err
 	}
 	job := eng.Job("update", vars["name"])
+	job.Setenv("Shares", r.Form.Get("Shares"))
 	if err := job.Run(); err != nil {
 		return err
 	}

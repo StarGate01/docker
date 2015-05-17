@@ -420,18 +420,18 @@ func (t *TtyConsole) Close() error {
 	return t.console.Close()
 }
 
-func (d *driver) Update(c *execdriver.Command, cpushare int) error {
+func (d *driver) Update(c *execdriver.Command, cpushare int64) error {
 	//print stuff
 	active := d.activeContainers[c.ID]
 	if active == nil {
 		log.Warnf("No active container exists with ID %s", c.ID)
 	} else {
 		config := active.Config()
-		config.Cgroups.CpuShares = 1
+		config.Cgroups.CpuShares = cpushare
 		//config.Cgroups.Memory = 1
 		//config.Cgroups.MemoryReservation = 1
 		//config.Cgroups.MemorySwap = 1
-		//config.Cgroups.CpusetCpus = 
+		//config.Cgroups.CpusetCpus =
 		//config.Cgroups.CpuQuota = 1
 		//config.Cgroups.CpuPeriod = 1
 		active.Set(config)
@@ -439,4 +439,3 @@ func (d *driver) Update(c *execdriver.Command, cpushare int) error {
 	log.Warnf("UPDATE: DRIVER IS WORKING")
 	return nil
 }
-
