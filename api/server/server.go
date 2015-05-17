@@ -1373,6 +1373,7 @@ func createRouter(eng *engine.Engine, logging, enableCors bool, corsHeaders stri
 			"/exec/{name:.*}/start":         postContainerExecStart,
 			"/exec/{name:.*}/resize":        postContainerExecResize,
 			"/containers/{name:.*}/rename":  postContainerRename,
+			"/containers/{name:.*}/update":  postContainersUpdate,
 		},
 		"DELETE": {
 			"/containers/{name:.*}": deleteContainers,
@@ -1611,4 +1612,19 @@ func ServeApi(job *engine.Job) engine.Status {
 	}
 
 	return engine.StatusOK
+}
+
+func postContainersUpdate(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+	if vars == nil {
+		return fmt.Errorf("Missing parameter")
+	}
+	if err := parseForm(r); err != nil {
+		return err
+	}
+	job := eng.Job("update", vars["name"])
+	if err := job.Run(); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

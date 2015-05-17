@@ -419,3 +419,24 @@ func (t *TtyConsole) AttachPipes(pipes *execdriver.Pipes) error {
 func (t *TtyConsole) Close() error {
 	return t.console.Close()
 }
+
+func (d *driver) Update(c *execdriver.Command, cpushare int) error {
+	//print stuff
+	active := d.activeContainers[c.ID]
+	if active == nil {
+		log.Warnf("No active container exists with ID %s", c.ID)
+	} else {
+		config := active.Config()
+		config.Cgroups.CpuShares = 1
+		//config.Cgroups.Memory = 1
+		//config.Cgroups.MemoryReservation = 1
+		//config.Cgroups.MemorySwap = 1
+		//config.Cgroups.CpusetCpus = 
+		//config.Cgroups.CpuQuota = 1
+		//config.Cgroups.CpuPeriod = 1
+		active.Set(config)
+	}
+	log.Warnf("UPDATE: DRIVER IS WORKING")
+	return nil
+}
+
