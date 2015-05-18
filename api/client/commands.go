@@ -2889,7 +2889,7 @@ func calculateCpuPercent(previousCpu, previousSystem uint64, v *types.Stats) flo
 
 func (cli *DockerCli) CmdOda(args ...string) error {
 	//We obtain the FlagSet.
-	cmd := cli.Subcmd("ODA", "[OPTION]", "ODA Loop, no policy will only observe.", true)
+	cmd := cli.Subcmd("ODA", "[OPTION]", "ODA Loop.", true)
 	//REQUIRED VARIABLES
 	var (
 		//The output formater to the cli.out
