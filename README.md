@@ -1,3 +1,48 @@
+This branch: Observe Decide Act (ODA) loop for adaptation in computation intensive containers
+=============================================================================================
+During this project we focused on leveraging the docker engine to allow
+adaptability of the cpu shares of different containers, according to the
+cpu use of each container. Our new docker command allows modifications to
+the observe decide act state machine by changing different parameters such 
+as observation frequency, adaptation frequency, and decision policy and its
+parameters.
+
+So far we have not create any explicit dynamic adaptation but we have 
+study an static approach with a basic policy. This policy consist of 
+creating coarse grained time slots, with an order of magnitude of second,
+in which a unique container has the majority of the cpu shares. The policy
+starts taking effect  only if there is oversubscription in the cpu shares.
+This policy is based in the fact that, when there is oversubscription, there is
+contantion in cache and in the OS scheduler (Cite required). The effect of 
+this macroscheduling policy were confirmed by running several containers that were
+executing Linpack. Linpack is a common benchmark used in HPC community that does 
+LU decomposition. Linpack has a high dependency in cache memory and tends to use
+100% of the cpu computation. 
+
+Although this work is still incomplete as it is right now, we hope it will encourage
+docker community in the implementation of better policies and serves as a support
+to highligh the importance of better ODA policies and dynamic adaptation for
+different type of loads
+
+## Use
+
+So far we use different flags to change the Observe Decide Act parameters.
+
+  * -fd, --file_dump= fileeName.     If defined, the output would ve in a 
+                                     CVS file. Else it would be std output.
+  * --help                           Print usage
+  * -ob, --observe                   Do not adapt, only observe dumping the info
+                                     use -obv ms to change the observation interval
+  * -obv, --observe_value=value      Setting the observe interval value default is 2000 ms. 
+                                     implies --observe 
+  * -rt, --reaction_time             Measure how long it takes since the moment the action 
+                                     to modify cgroups is sent to the moment it is actually
+                                     on the cgroups (Incompatible with any other policy)
+  * -ts, --time_slots=false          See description of this policy above. Create timeslots
+                                     ,use -slot_size=val_ms to define time slot value 
+  * -tsv, --time_slots_value=size    Time slot size. Value in ms. -tsv=time_in_ms. 
+                                     Implies --time_slots 
+
 Docker: the Linux container engine
 ==================================
 
