@@ -43,6 +43,22 @@ So far we use different flags to change the Observe Decide Act parameters.
   * -tsv, --time_slots_value=size    Time slot size. Value in ms. -tsv=time_in_ms. 
                                      Implies --time_slots 
 
+## Paper Information
+
+Stephen Herbein, Ayush Dusia, Aaron Landwehr, Sean McDaniel, Jose Monsalve, Yang Yang, Seetharami R. Seelam, and Michela Taufer. Resource Management for Running HPC Applications in Container Clouds. In Proceedings of 31st International Supercomputing Conference, ISC, Leipzig, Germany, June 2016.
+
+```TeX
+@inproceedings{Docker-ISC,
+author = {Stephen Herbein and Ayush Dusia and Aaron Landwehr and Sean McDaniel and Jose Monsalve and Yang Yang and Seetharami R. Seelam and Michela Taufer},
+title={Resource Management for Running HPC Applications in Container Clouds},
+booktitle={Proceedings of 31st International Supercomputing Conference},
+series = {ISC},
+year={2016},
+month={June},
+address = {Leipzig, Germany},
+}
+```
+
 Docker: the Linux container engine
 ==================================
 
