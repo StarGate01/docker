@@ -27,6 +27,8 @@ FROM ubuntu:14.04
 MAINTAINER Tianon Gravi <admwiggin@gmail.com> (@tianon)
 
 # Packaged dependencies
+RUN apt-get update && apt-get install -y software-properties-common
+RUN apt-add-repository ppa:brightbox/ruby-ng
 RUN apt-get update && apt-get install -y \
 	apparmor \
 	aufs-tools \
